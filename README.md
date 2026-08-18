@@ -34,6 +34,7 @@ container can store. Unsupported profiles should fail clearly.
 - AAC-LC decode through Rockbox's fixed-point FAAD library
 - 128 KiB PCM ring output with audio-master A/V synchronization
 - Pause/resume, late-video dropping, underrun tracking, and exit controls
+- Full-screen pause display without stale video-frame remnants
 - Backlight held on during playback, with Rockbox's setting restored on exit
 - Two-second elapsed/total-time overlay on startup or Menu, with a progress bar
 - Live volume control using the player's dedicated volume buttons

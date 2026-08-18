@@ -263,6 +263,14 @@ static void draw_message_panel(const char *line1, const char *line2,
     rb->lcd_update();
 }
 
+static void draw_pause_screen(void)
+{
+    rb->lcd_set_background(LCD_BLACK);
+    rb->lcd_clear_display();
+    draw_message_panel("MPEGPlayer NX paused",
+                       "Play: resume  Power: exit", NULL);
+}
+
 static void draw_playback_stats(const struct playback_stats *stats,
                                 const struct nx_aac_decoder *audio,
                                 const struct nx_pcm_output *output,
@@ -341,8 +349,7 @@ static int process_button(int button, struct nx_pcm_output *output)
 #ifdef BUTTON_PLAY
     if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PLAY) {
         nx_pcm_output_pause(output, 0);
-        draw_message_panel("MPEGPlayer NX paused",
-                           "Play: resume  Power: exit", NULL);
+        draw_pause_screen();
         while (1) {
             button = rb->button_get(true);
             if (rb->default_event_handler(button) == SYS_USB_CONNECTED)
