@@ -123,14 +123,16 @@ standard MP4 containers; the dedicated extension avoids Rockbox's built-in
 
 During playback, Play pauses/resumes, Volume changes the Rockbox volume, Menu
 shows the two-second progress OSD, and Previous/Next seek backward/forward by
-ten seconds to the nearest usable keyframe. Holding Previous/Next performs one
-previewed seek that accelerates from 10-second steps through 30-second,
-one-minute, five-minute, and ten-minute steps, then applies the final target on
-release. The backlight is forced on until playback exits, after which the
-user's normal backlight setting is restored. The compact playback OSD uses
-black text on the raised-lavender styling of Rockbox's original MPEGPlayer and
-is kept independent of oversized theme fonts. Pausing freezes the current frame
-and changes the centered play glyph to pause.
+ten seconds. Holding Previous/Next accelerates from 10-second steps through
+30-second, one-minute, five-minute, and ten-minute steps. Every step decodes a
+new visual preview, the center glyph changes to reverse or fast-forward, and
+the final A/V target is applied on release. Scrubbing also works while paused
+and leaves playback paused. The backlight is forced on until playback exits,
+after which the user's normal backlight setting is restored. The compact
+playback OSD uses black text on the raised-lavender styling of Rockbox's
+original MPEGPlayer and is kept independent of oversized theme fonts. Pausing
+freezes the current frame and changes the centered play glyph to pause. When
+the OSD hides, the player restores the underlying full-height video frame.
 
 ### Install a native test build manually
 

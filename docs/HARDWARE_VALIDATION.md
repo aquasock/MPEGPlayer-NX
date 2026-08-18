@@ -10,8 +10,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Rockbox target: `erosqnative` (target ID 116)
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
-- Plugin size: 328,440 bytes
-- SHA-256: `34f15445dde963712b4c1d2633895a89ba398df8c7fac18a4b2811ceece4e028`
+- Plugin size: 329,752 bytes
+- SHA-256: `b2c325e3b039514ede08ef16d96f68da9cb1a886ada2642f60244fbbedb3f5d7`
 
 ## Device results
 
@@ -45,9 +45,12 @@ The playback overlay follows MPEGPlayer's compact raised-lavender styling and
 uses the fixed system font so a large theme font cannot obscure the video.
 It uses black text for contrast. Pausing retains the current video frame and
 changes the centered playback glyph to pause without opening another panel.
-Held Previous/Next seeks preview one target and accelerate through 10-second,
-30-second, one-minute, five-minute, and ten-minute steps before restarting the
-decoders once on release.
+Seeking is also available while paused. Held Previous/Next seeks show reverse
+or fast-forward glyphs, decode a visible frame at every target, and accelerate
+through 10-second, 30-second, one-minute, five-minute, and ten-minute steps.
+Audio remains stopped throughout the preview and the A/V pipeline is restarted
+at the final target on release. Expiring the OSD forces a full-frame redraw so
+its reserved rows cannot remain as a black strip while late frames are dropped.
 
 ## Test media checksums
 

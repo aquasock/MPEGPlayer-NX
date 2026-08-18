@@ -223,8 +223,28 @@ static void format_playback_time(char *text, size_t size, uint64_t time_us)
     }
 }
 
+enum nx_osd_status {
+    NX_OSD_PLAYING = 0,
+    NX_OSD_PAUSED,
+    NX_OSD_FAST_FORWARD,
+    NX_OSD_REWIND
+};
+
+static void draw_osd_triangle(int x, int y, int height, int direction)
+{
+    int i;
+
+    for (i = 0; i < height; ++i) {
+        int half = i <= height / 2 ? i : height - 1 - i;
+        if (direction > 0)
+            rb->lcd_hline(x, x + half, y + i);
+        else
+            rb->lcd_hline(x - half, x, y + i);
+    }
+}
+
 static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us,
-                              int paused)
+                              enum nx_osd_status status)
 {
     char elapsed_text[16];
     char duration_text[16];
@@ -240,7 +260,6 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us,
     int icon_height;
     int bar_width;
     int fill_width;
-    int i;
     int volume = rb->sound_val2phys(SOUND_VOLUME,
                                     rb->global_status->volume);
 
@@ -291,16 +310,25 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us,
     icon_height = font_height < 9 ? font_height : 9;
     icon_x = (LCD_WIDTH - icon_height) / 2;
     icon_y = panel_y + 2 + (font_height - icon_height) / 2;
-    if (paused) {
+    if (status == NX_OSD_PAUSED) {
         int bar = icon_height < 6 ? 1 : 2;
         rb->lcd_fillrect(icon_x, icon_y, bar, icon_height);
         rb->lcd_fillrect(icon_x + icon_height - bar, icon_y,
                          bar, icon_height);
-    } else {
-        for (i = 0; i < icon_height; ++i) {
-            int half = i <= icon_height / 2 ? i : icon_height - 1 - i;
-            rb->lcd_hline(icon_x, icon_x + half, icon_y + i);
+    } else if (status == NX_OSD_FAST_FORWARD || status == NX_OSD_REWIND) {
+        int direction = status == NX_OSD_FAST_FORWARD ? 1 : -1;
+        int gap = icon_height / 2 + 1;
+        int center = LCD_WIDTH / 2;
+
+        if (direction > 0) {
+            draw_osd_triangle(center - gap, icon_y, icon_height, 1);
+            draw_osd_triangle(center, icon_y, icon_height, 1);
+        } else {
+            draw_osd_triangle(center, icon_y, icon_height, -1);
+            draw_osd_triangle(center + gap, icon_y, icon_height, -1);
         }
+    } else {
+        draw_osd_triangle(icon_x, icon_y, icon_height, 1);
     }
 
     rb->lcd_drawrect(2, LCD_HEIGHT - 6, bar_width, 4);
@@ -388,9 +416,51 @@ static uint64_t adjust_seek_target(uint64_t target_us, uint64_t duration_us,
     return target_us + step_us;
 }
 
+struct nx_seek_preview {
+    struct nx_h264_decoder *video;
+    const struct nx_reader *reader;
+    const struct nx_mp4_track *track;
+    enum nx_h264_status *status;
+};
+
+static void draw_seek_preview(struct nx_seek_preview *preview,
+                              uint64_t requested_us, uint64_t duration_us,
+                              int direction)
+{
+    uint64_t requested_dts;
+    uint32_t sample;
+    uint64_t sample_dts;
+
+    if (preview != NULL) {
+        requested_dts = requested_us * preview->track->timescale / 1000000u;
+        if (nx_mp4_find_sample_at_or_before(preview->reader, preview->track,
+                requested_dts, 1, &sample, &sample_dts) == NX_MP4_OK) {
+            nx_h264_decoder_destroy(preview->video);
+            *preview->status = nx_h264_decoder_init(preview->video);
+            if (*preview->status == NX_H264_OK)
+                *preview->status = nx_h264_stream_start_at(
+                    preview->video, preview->reader, preview->track, sample);
+
+            while (*preview->status == NX_H264_OK) {
+                *preview->status = nx_h264_decode_next_picture(preview->video);
+                if (*preview->status != NX_H264_OK ||
+                    preview->video->sample.dts >= requested_dts)
+                    break;
+            }
+            if (*preview->status == NX_H264_OK)
+                draw_picture(preview->video, playback_osd_y());
+        }
+    }
+
+    draw_playback_osd(requested_us, duration_us,
+                      direction > 0 ? NX_OSD_FAST_FORWARD : NX_OSD_REWIND);
+    rb->lcd_update();
+}
+
 static int collect_seek(int base_button, int event_code, int direction,
                         struct nx_pcm_output *output, uint64_t current_us,
-                        uint64_t duration_us, uint64_t *seek_target_us)
+                        uint64_t duration_us, uint64_t *seek_target_us,
+                        struct nx_seek_preview *preview)
 {
     long started = *rb->current_tick;
     long next_step_tick = started + HZ / 2;
@@ -399,10 +469,9 @@ static int collect_seek(int base_button, int event_code, int direction,
 
     /* Preview the target while the audio clock is stopped, then perform one
      * decoder restart when the key is released.  This preserves MPEGPlayer's
-     * hold-to-accelerate feel without decoding every intermediate position. */
+     * hold-to-accelerate feel while showing the frame at every time step. */
     nx_pcm_output_pause(output, 0);
-    draw_playback_osd(requested_us, duration_us, 1);
-    rb->lcd_update();
+    draw_seek_preview(preview, requested_us, duration_us, direction);
 
     while (1) {
         int button = rb->button_get_w_tmo(HZ / 4);
@@ -428,10 +497,54 @@ static int collect_seek(int base_button, int event_code, int direction,
             requested_us = adjust_seek_target(
                 requested_us, duration_us,
                 seek_hold_step_us(now - started), direction);
-            draw_playback_osd(requested_us, duration_us, 1);
-            rb->lcd_update();
+            draw_seek_preview(preview, requested_us, duration_us, direction);
             next_step_tick = now + HZ;
         }
+    }
+}
+
+static int wait_while_paused(struct nx_pcm_output *output,
+                             uint64_t current_us, uint64_t duration_us,
+                             uint64_t *seek_target_us, int *paused_mode,
+                             struct nx_seek_preview *preview)
+{
+    int button;
+
+    draw_playback_osd(current_us, duration_us, NX_OSD_PAUSED);
+    rb->lcd_update();
+    while (1) {
+        button = rb->button_get_w_tmo(HZ / 2);
+        rb->reset_poweroff_timer();
+        if (button == BUTTON_NONE)
+            continue;
+        if (rb->default_event_handler(button) == SYS_USB_CONNECTED)
+            return 2;
+#ifdef BUTTON_POWER
+        if ((button & BUTTON_POWER) != 0)
+            return 1;
+#endif
+#ifdef BUTTON_PREV
+        if ((button & (BUTTON_PREV | BUTTON_REL | BUTTON_REPEAT)) ==
+                BUTTON_PREV && seek_target_us != NULL)
+            return collect_seek(BUTTON_PREV, 4, -1, output, current_us,
+                                duration_us, seek_target_us, preview);
+#endif
+#ifdef BUTTON_NEXT
+        if ((button & (BUTTON_NEXT | BUTTON_REL | BUTTON_REPEAT)) ==
+                BUTTON_NEXT && seek_target_us != NULL)
+            return collect_seek(BUTTON_NEXT, 5, 1, output, current_us,
+                                duration_us, seek_target_us, preview);
+#endif
+#ifdef BUTTON_PLAY
+        if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) ==
+                BUTTON_PLAY) {
+            *paused_mode = 0;
+            nx_pcm_output_pause(output, 1);
+            draw_playback_osd(current_us, duration_us, NX_OSD_PLAYING);
+            rb->lcd_update();
+            return 3;
+        }
+#endif
     }
 }
 
@@ -439,7 +552,8 @@ static int collect_seek(int base_button, int event_code, int direction,
  * 4 = seek backward, 5 = seek forward. */
 static int process_button(int button, struct nx_pcm_output *output,
                           uint64_t current_us, uint64_t duration_us,
-                          uint64_t *seek_target_us)
+                          uint64_t *seek_target_us, int *paused_mode,
+                          struct nx_seek_preview *preview)
 {
     if (button == BUTTON_NONE)
         return 0;
@@ -476,39 +590,22 @@ static int process_button(int button, struct nx_pcm_output *output,
     if ((button & (BUTTON_PREV | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PREV &&
             seek_target_us != NULL)
         return collect_seek(BUTTON_PREV, 4, -1, output, current_us,
-                            duration_us, seek_target_us);
+                            duration_us, seek_target_us, preview);
 #endif
 #ifdef BUTTON_NEXT
     if ((button & (BUTTON_NEXT | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_NEXT &&
             seek_target_us != NULL)
         return collect_seek(BUTTON_NEXT, 5, 1, output, current_us,
-                            duration_us, seek_target_us);
+                            duration_us, seek_target_us, preview);
 #endif
 
 #ifdef BUTTON_PLAY
-    if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PLAY) {
+    if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PLAY &&
+            paused_mode != NULL) {
+        *paused_mode = 1;
         nx_pcm_output_pause(output, 0);
-        draw_playback_osd(current_us, duration_us, 1);
-        rb->lcd_update();
-        while (1) {
-            button = rb->button_get_w_tmo(HZ / 2);
-            rb->reset_poweroff_timer();
-            if (button == BUTTON_NONE)
-                continue;
-            if (rb->default_event_handler(button) == SYS_USB_CONNECTED)
-                return 2;
-#ifdef BUTTON_POWER
-            if ((button & BUTTON_POWER) != 0)
-                return 1;
-#endif
-            if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) ==
-                    BUTTON_PLAY) {
-                nx_pcm_output_pause(output, 1);
-                draw_playback_osd(current_us, duration_us, 0);
-                rb->lcd_update();
-                return 3;
-            }
-        }
+        return wait_while_paused(output, current_us, duration_us,
+                                 seek_target_us, paused_mode, preview);
     }
 #endif
 
@@ -569,7 +666,7 @@ static int restart_av_at(struct nx_h264_decoder *video,
             requested_video_dts, 1, &video_sample, &video_dts) != NX_MP4_OK)
         return -1;
     if (nx_mp4_find_sample_at_or_before(reader, audio_track,
-            video_dts * audio_track->timescale / video_track->timescale,
+            requested_us * audio_track->timescale / 1000000u,
             0, &audio_sample, &audio_dts) != NX_MP4_OK)
         return -1;
 
@@ -607,6 +704,8 @@ static int drain_audio(struct nx_aac_decoder *audio,
                        enum nx_aac_status *audio_status,
                        uint64_t duration_us)
 {
+    int paused_mode = 0;
+
     while (!nx_pcm_output_finished(output)) {
         int event;
         *audio_status = fill_audio(audio, output, NX_AUDIO_PREBUFFER,
@@ -614,9 +713,10 @@ static int drain_audio(struct nx_aac_decoder *audio,
         if (*audio_status != NX_AAC_OK)
             return 0;
         event = process_button(rb->button_get_w_tmo(1), output,
-                               duration_us, duration_us, NULL);
+                               duration_us, duration_us, NULL,
+                               &paused_mode, NULL);
         if (event == 3) {
-            draw_playback_osd(duration_us, duration_us, 0);
+            draw_playback_osd(duration_us, duration_us, NX_OSD_PLAYING);
             rb->lcd_update();
         } else if (event == 1 || event == 2) {
             return event;
@@ -665,6 +765,14 @@ static int play_av(struct nx_h264_decoder *video,
     long tail_tick = 0;
     long osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
     uint32_t osd_second = UINT32_MAX;
+    int osd_visible = 1;
+    int paused_mode = 0;
+    struct nx_seek_preview seek_preview;
+
+    seek_preview.video = video;
+    seek_preview.reader = reader;
+    seek_preview.track = track;
+    seek_preview.status = video_status;
 
     rb->memset(stats, 0, sizeof(*stats));
     *video_status = nx_h264_stream_start(video, reader, track);
@@ -726,7 +834,7 @@ static int play_av(struct nx_h264_decoder *video,
         audio_clock_us = playback_clock_us(output, audio_ended,
                                             &tail_active, &tail_base_us,
                                             &tail_tick);
-        while (audio_clock_us < target_us) {
+        while (!paused_mode && audio_clock_us < target_us) {
             /* A malformed or badly trimmed file may end audio before video.
              * Stop cleanly at the last audible timestamp instead of waiting
              * forever on an audio clock which can no longer advance. */
@@ -737,9 +845,11 @@ static int play_av(struct nx_h264_decoder *video,
             }
             event = process_button(rb->button_get_w_tmo(1), output,
                                    audio_clock_us, duration_us,
-                                   &seek_target_us);
+                                   &seek_target_us, &paused_mode,
+                                   &seek_preview);
             if (event == 3) {
                 osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
+                osd_visible = 1;
                 event = 0;
             }
             if (event == 4 || event == 5) {
@@ -758,6 +868,16 @@ static int play_av(struct nx_h264_decoder *video,
         }
         if (seek_event != 0)
             goto perform_seek;
+
+        /* If the OSD expires while frames are late, restore this decoded
+         * frame before the drop path can leave the old panel behind. */
+        if (!paused_mode && osd_visible &&
+            *rb->current_tick >= osd_until) {
+            draw_picture(video, LCD_HEIGHT);
+            rb->lcd_update();
+            osd_visible = 0;
+            osd_second = UINT32_MAX;
+        }
         if (audio_clock_us > target_us + frame_period_us) {
             stats->dropped++;
             continue;
@@ -767,23 +887,35 @@ static int play_av(struct nx_h264_decoder *video,
             uint32_t current_second = (uint32_t)(audio_clock_us / 1000000u);
             draw_picture(video, playback_osd_y());
             if (current_second != osd_second) {
-                draw_playback_osd(audio_clock_us, duration_us, 0);
+                draw_playback_osd(audio_clock_us, duration_us,
+                                  paused_mode ? NX_OSD_PAUSED :
+                                                NX_OSD_PLAYING);
                 osd_second = current_second;
             }
+            osd_visible = 1;
         } else {
             draw_picture(video, LCD_HEIGHT);
             osd_second = UINT32_MAX;
+            osd_visible = 0;
         }
         rb->lcd_update();
         stats->displayed++;
-        event = process_button(rb->button_get(false), output,
-                               audio_clock_us, duration_us,
-                               &seek_target_us);
+        if (paused_mode)
+            event = wait_while_paused(output, audio_clock_us, duration_us,
+                                      &seek_target_us, &paused_mode,
+                                      &seek_preview);
+        else
+            event = process_button(rb->button_get(false), output,
+                                   audio_clock_us, duration_us,
+                                   &seek_target_us, &paused_mode,
+                                   &seek_preview);
         if (event == 3) {
             osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
-            draw_playback_osd(audio_clock_us, duration_us, 0);
+            draw_playback_osd(audio_clock_us, duration_us,
+                              paused_mode ? NX_OSD_PAUSED : NX_OSD_PLAYING);
             rb->lcd_update();
             osd_second = (uint32_t)(audio_clock_us / 1000000u);
+            osd_visible = 1;
             event = 0;
         }
         if (event == 4 || event == 5) {
@@ -801,9 +933,12 @@ perform_seek:
                               audio_track, seek_target_us, &audio_ended,
                               video_status, audio_status) != 0)
                 return 0;
+            if (paused_mode)
+                nx_pcm_output_pause(output, 0);
             tail_active = 0;
             osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
             osd_second = UINT32_MAX;
+            osd_visible = 1;
             rb->reset_poweroff_timer();
         }
     }
