@@ -184,22 +184,13 @@ static int playback_osd_y(void)
     return (LCD_HEIGHT - font_height - 8) & ~1;
 }
 
-static void draw_picture(const struct nx_h264_decoder *decoder,
-                         int visible_bottom)
+static void draw_picture(const struct nx_h264_decoder *decoder)
 {
     unsigned char *planes[3];
     uint64_t luma_size = (uint64_t)decoder->coded_width *
                          decoder->coded_height;
     int x = (LCD_WIDTH - (int)decoder->width) / 2;
     int y = (LCD_HEIGHT - (int)decoder->height) / 2;
-    int height = decoder->height;
-
-    if (visible_bottom < y + height)
-        height = visible_bottom - y;
-    /* lcd_blit_yuv consumes 4:2:0 data, so the clipped height must be even. */
-    height &= ~1;
-    if (height <= 0)
-        return;
 
     planes[0] = decoder->picture;
     planes[1] = decoder->picture + luma_size;
@@ -207,7 +198,7 @@ static void draw_picture(const struct nx_h264_decoder *decoder,
 
     rb->lcd_blit_yuv(planes, decoder->crop_left, decoder->crop_top,
                      decoder->coded_width, x, y,
-                     decoder->width, height);
+                     decoder->width, decoder->height);
 }
 
 static void format_playback_time(char *text, size_t size, uint64_t time_us)
@@ -448,7 +439,7 @@ static void draw_seek_preview(struct nx_seek_preview *preview,
                     break;
             }
             if (*preview->status == NX_H264_OK)
-                draw_picture(preview->video, playback_osd_y());
+                draw_picture(preview->video);
         }
     }
 
@@ -764,7 +755,6 @@ static int play_av(struct nx_h264_decoder *video,
     uint64_t tail_base_us = 0;
     long tail_tick = 0;
     long osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
-    uint32_t osd_second = UINT32_MAX;
     int osd_visible = 1;
     int paused_mode = 0;
     struct nx_seek_preview seek_preview;
@@ -873,10 +863,9 @@ static int play_av(struct nx_h264_decoder *video,
          * frame before the drop path can leave the old panel behind. */
         if (!paused_mode && osd_visible &&
             *rb->current_tick >= osd_until) {
-            draw_picture(video, LCD_HEIGHT);
+            draw_picture(video);
             rb->lcd_update();
             osd_visible = 0;
-            osd_second = UINT32_MAX;
         }
         if (audio_clock_us > target_us + frame_period_us) {
             stats->dropped++;
@@ -884,18 +873,16 @@ static int play_av(struct nx_h264_decoder *video,
         }
 
         if (*rb->current_tick < osd_until) {
-            uint32_t current_second = (uint32_t)(audio_clock_us / 1000000u);
-            draw_picture(video, playback_osd_y());
-            if (current_second != osd_second) {
-                draw_playback_osd(audio_clock_us, duration_us,
-                                  paused_mode ? NX_OSD_PAUSED :
-                                                NX_OSD_PLAYING);
-                osd_second = current_second;
-            }
+            /* Render the complete frame before compositing the OSD.  Both
+             * reach the LCD in one update, so the video underneath is never
+             * truncated and the overlay cannot flicker between frames. */
+            draw_picture(video);
+            draw_playback_osd(audio_clock_us, duration_us,
+                              paused_mode ? NX_OSD_PAUSED :
+                                            NX_OSD_PLAYING);
             osd_visible = 1;
         } else {
-            draw_picture(video, LCD_HEIGHT);
-            osd_second = UINT32_MAX;
+            draw_picture(video);
             osd_visible = 0;
         }
         rb->lcd_update();
@@ -914,7 +901,6 @@ static int play_av(struct nx_h264_decoder *video,
             draw_playback_osd(audio_clock_us, duration_us,
                               paused_mode ? NX_OSD_PAUSED : NX_OSD_PLAYING);
             rb->lcd_update();
-            osd_second = (uint32_t)(audio_clock_us / 1000000u);
             osd_visible = 1;
             event = 0;
         }
@@ -937,7 +923,6 @@ perform_seek:
                 nx_pcm_output_pause(output, 0);
             tail_active = 0;
             osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
-            osd_second = UINT32_MAX;
             osd_visible = 1;
             rb->reset_poweroff_timer();
         }

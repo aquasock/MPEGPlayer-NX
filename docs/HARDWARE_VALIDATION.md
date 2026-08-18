@@ -10,8 +10,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Rockbox target: `erosqnative` (target ID 116)
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
-- Plugin size: 329,752 bytes
-- SHA-256: `b2c325e3b039514ede08ef16d96f68da9cb1a886ada2642f60244fbbedb3f5d7`
+- Plugin size: 329,560 bytes
+- SHA-256: `6468396d7387f2b5b5e3517c213898ac45828d7b27bd513acf374c368f26f0cd`
 
 ## Device results
 
@@ -49,8 +49,10 @@ Seeking is also available while paused. Held Previous/Next seeks show reverse
 or fast-forward glyphs, decode a visible frame at every target, and accelerate
 through 10-second, 30-second, one-minute, five-minute, and ten-minute steps.
 Audio remains stopped throughout the preview and the A/V pipeline is restarted
-at the final target on release. Expiring the OSD forces a full-frame redraw so
-its reserved rows cannot remain as a black strip while late frames are dropped.
+at the final target on release. Video is always rendered at full height before
+the OSD is composited in the same framebuffer update. The next full-height
+frame therefore replaces every OSD pixel when the overlay expires, including
+while late frames are being discarded.
 
 ## Test media checksums
 

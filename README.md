@@ -131,8 +131,9 @@ and leaves playback paused. The backlight is forced on until playback exits,
 after which the user's normal backlight setting is restored. The compact
 playback OSD uses black text on the raised-lavender styling of Rockbox's
 original MPEGPlayer and is kept independent of oversized theme fonts. Pausing
-freezes the current frame and changes the centered play glyph to pause. When
-the OSD hides, the player restores the underlying full-height video frame.
+freezes the current frame and changes the centered play glyph to pause. Video
+frames remain full-height beneath the composited OSD, and the next frame
+replaces the complete overlay when it hides.
 
 ### Install a native test build manually
 
