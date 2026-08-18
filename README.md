@@ -47,9 +47,9 @@ container can store. Unsupported profiles should fail clearly.
 - A Rockbox subdirectory-plugin make fragment
 - Idempotent staging into a Rockbox source tree
 
-The current M6 test build plays H.264/AAC files with audio-master
+The hardware-validated M6 build plays H.264/AAC files with audio-master
 synchronization, player controls, keyframe seeking, robust end-of-file draining,
-and specific media-profile diagnostics. See
+specific media-profile diagnostics, and a clean five-minute endurance pass. See
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Measured results from the physical
 HIFI WALKER H2 are recorded in
 [docs/HARDWARE_VALIDATION.md](docs/HARDWARE_VALIDATION.md).

@@ -84,13 +84,19 @@ frames, and zero PCM underruns over the one-minute A/V sync test.
 - keyframe-based backward/forward seeking
 - stable OSD rendering and playback-scoped backlight override
 
-### M6: robustness and endurance (in progress)
+### M6: robustness and endurance (complete)
 
 - drain buffered AAC cleanly after the final video frame
 - stop cleanly if a damaged or mismatched file ends audio early
 - reject unsupported NX240 dimensions, profile, level, frame rate, or audio
   format before decoder allocation, with a specific on-screen explanation
 - five-minute fast-start endurance and synchronization asset
+- bounded silent-tail scheduling to flush final H.264 pictures when AAC encoder
+  padding makes the physical PCM clock end slightly early
+
+Validated on Eros Q native over five minutes with all final pictures displayed,
+zero reported frame drops, zero PCM underruns, synchronized stereo audio, and
+stable 447 KiB peak decoder allocation.
 
 ## Decoder selection gate
 

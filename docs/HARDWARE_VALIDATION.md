@@ -20,7 +20,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 | 20 s stress, early M3 | 480/480 | 0 | 11.4/20.1 ms | video-only | n/a | 320 KiB |
 | 20 s stress, M4 A/V | 480/480 | 0 | 13.8/22.8 ms | 1.0/1.7 ms | 0 | 408 KiB |
 | 60 s synchronization | 1440/1440 | 0 | 10.0/17.6 ms | 0.9/1.0 ms | 0 | 446 KiB |
-| 5 min endurance | 7196/7197 | 0 | 11.0/19.6 ms | 0.9/1.1 ms | 0 | 447 KiB |
+| 5 min endurance, pre-tail fix | 7196/7197 | 0 | 11.0/19.6 ms | 0.9/1.1 ms | 0 | 447 KiB |
+| 5 min final-frame retest | 7198/7198 | 0 | not re-recorded | not re-recorded | 0 | stable |
 
 The M4 test produced clean stereo audio in both ears. On the one-minute sync
 test, each beep remained aligned with its corresponding visual flash.
@@ -50,8 +51,9 @@ panel was removed because it flashed between seek steps on the LCD.
 
 The five-minute endurance run remained synchronized and stable, with no frame
 drops or PCM underruns. Host decoding confirms all 7,198 video samples are
-valid. The device stopped one decoded picture early when the PCM clock ended
+valid. The initial device run stopped one decoded picture early when the PCM clock ended
 before the H.264 decoder flushed its final buffered pictures. The current build
 adds a bounded 250 ms silent-tail clock to finish those pictures without
-allowing badly truncated audio tracks to run on indefinitely; that final-frame
-behavior is awaiting a device retest.
+allowing badly truncated audio tracks to run on indefinitely. The physical-device
+retest completed successfully with all 7,198 pictures displayed, zero drops,
+and zero PCM underruns.
