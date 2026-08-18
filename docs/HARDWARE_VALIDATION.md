@@ -10,8 +10,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Rockbox target: `erosqnative` (target ID 116)
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
-- Plugin size: 327,352 bytes
-- SHA-256: `d3a472094bcd0f32f6bd8a90d0593b40e0005815f873fe7d2142790ca70a0548`
+- Plugin size: 328,408 bytes
+- SHA-256: `4781023281ad201912ba0e2a68d3cdd1928c09299a2e8d1732181d3af7a95409`
 
 ## Device results
 
@@ -43,6 +43,11 @@ Held Previous/Next repeat events are ignored after the initial ten-second seek,
 preventing overlapping decoder restarts and corrupted frames.
 The playback overlay follows MPEGPlayer's compact raised-lavender styling and
 uses the fixed system font so a large theme font cannot obscure the video.
+It uses black text for contrast. Pausing retains the current video frame and
+changes the centered playback glyph to pause without opening another panel.
+Held Previous/Next seeks preview one target and accelerate through 10-second,
+30-second, one-minute, five-minute, and ten-minute steps before restarting the
+decoders once on release.
 
 ## Test media checksums
 

@@ -223,7 +223,8 @@ static void format_playback_time(char *text, size_t size, uint64_t time_us)
     }
 }
 
-static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us)
+static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us,
+                              int paused)
 {
     char elapsed_text[16];
     char duration_text[16];
@@ -239,6 +240,7 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us)
     int icon_height;
     int bar_width;
     int fill_width;
+    int i;
     int volume = rb->sound_val2phys(SOUND_VOLUME,
                                     rb->global_status->volume);
 
@@ -277,20 +279,26 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us)
     rb->lcd_fillrect(0, panel_y, LCD_WIDTH, panel_height);
 #endif
 
-    rb->lcd_set_foreground(LCD_WHITE);
+    rb->lcd_set_foreground(LCD_BLACK);
     rb->lcd_putsxy(2, panel_y + 2, elapsed_text);
     rb->lcd_putsxy(LCD_WIDTH - volume_width - 2, panel_y + 2, volume_text);
     rb->lcd_putsxy(LCD_WIDTH - volume_width - duration_width - 10,
                    panel_y + 2, duration_text);
 
-    /* A small play glyph occupies the center position used by MPEGPlayer's
-     * bitmap status icon. */
+    /* The center glyph mirrors MPEGPlayer's playback-state icon. */
     icon_height = font_height < 9 ? font_height : 9;
     icon_x = (LCD_WIDTH - icon_height) / 2;
     icon_y = panel_y + 2 + (font_height - icon_height) / 2;
-    for (int i = 0; i < icon_height; ++i) {
-        int half = i <= icon_height / 2 ? i : icon_height - 1 - i;
-        rb->lcd_hline(icon_x, icon_x + half, icon_y + i);
+    if (paused) {
+        int bar = icon_height < 6 ? 1 : 2;
+        rb->lcd_fillrect(icon_x, icon_y, bar, icon_height);
+        rb->lcd_fillrect(icon_x + icon_height - bar, icon_y,
+                         bar, icon_height);
+    } else {
+        for (i = 0; i < icon_height; ++i) {
+            int half = i <= icon_height / 2 ? i : icon_height - 1 - i;
+            rb->lcd_hline(icon_x, icon_x + half, icon_y + i);
+        }
     }
 
     rb->lcd_drawrect(2, LCD_HEIGHT - 6, bar_width, 4);
@@ -318,14 +326,6 @@ static void draw_message_panel(const char *line1, const char *line2,
     if (line3 != NULL)
         rb->lcd_putsxy(3, line_height * 2 + 3, line3);
     rb->lcd_update();
-}
-
-static void draw_pause_screen(void)
-{
-    rb->lcd_set_background(LCD_BLACK);
-    rb->lcd_clear_display();
-    draw_message_panel("MPEGPlayer NX paused",
-                       "Play: resume  Power: exit", NULL);
 }
 
 static void draw_playback_stats(const struct playback_stats *stats,
@@ -359,9 +359,85 @@ static void draw_playback_stats(const struct playback_stats *stats,
     draw_message_panel(line1, line2, line3);
 }
 
+static uint64_t seek_hold_step_us(long held_ticks)
+{
+    long held_seconds = held_ticks / HZ;
+
+    if (held_seconds < 2)
+        return 10000000u;
+    if (held_seconds < 5)
+        return 30000000u;
+    if (held_seconds < 8)
+        return 60000000u;
+    if (held_seconds < 12)
+        return 300000000u;
+    return 600000000u;
+}
+
+static uint64_t adjust_seek_target(uint64_t target_us, uint64_t duration_us,
+                                   uint64_t step_us, int direction)
+{
+    uint64_t limit_us = duration_us == 0 ? 0 : duration_us - 1;
+
+    if (direction < 0)
+        return target_us > step_us ? target_us - step_us : 0;
+    if (target_us >= limit_us || step_us >= limit_us - target_us)
+        return limit_us;
+    return target_us + step_us;
+}
+
+static int collect_seek(int base_button, int event_code, int direction,
+                        struct nx_pcm_output *output, uint64_t current_us,
+                        uint64_t duration_us, uint64_t *seek_target_us)
+{
+    long started = *rb->current_tick;
+    long next_step_tick = started + HZ / 2;
+    uint64_t requested_us = adjust_seek_target(current_us, duration_us,
+                                                10000000u, direction);
+
+    /* Preview the target while the audio clock is stopped, then perform one
+     * decoder restart when the key is released.  This preserves MPEGPlayer's
+     * hold-to-accelerate feel without decoding every intermediate position. */
+    nx_pcm_output_pause(output, 0);
+    draw_playback_osd(requested_us, duration_us, 1);
+    rb->lcd_update();
+
+    while (1) {
+        int button = rb->button_get_w_tmo(HZ / 4);
+        long now = *rb->current_tick;
+
+        rb->reset_poweroff_timer();
+        if (button == BUTTON_NONE)
+            continue;
+        if (rb->default_event_handler(button) == SYS_USB_CONNECTED)
+            return 2;
+#ifdef BUTTON_POWER
+        if ((button & BUTTON_POWER) != 0)
+            return 1;
+#endif
+        if ((button & (base_button | BUTTON_REL | BUTTON_REPEAT)) ==
+                (base_button | BUTTON_REL)) {
+            *seek_target_us = requested_us;
+            return event_code;
+        }
+        if ((button & (base_button | BUTTON_REL | BUTTON_REPEAT)) ==
+                (base_button | BUTTON_REPEAT) &&
+                (long)(now - next_step_tick) >= 0) {
+            requested_us = adjust_seek_target(
+                requested_us, duration_us,
+                seek_hold_step_us(now - started), direction);
+            draw_playback_osd(requested_us, duration_us, 1);
+            rb->lcd_update();
+            next_step_tick = now + HZ;
+        }
+    }
+}
+
 /* 0 = continue, 1 = user exit, 2 = USB, 3 = refresh OSD,
  * 4 = seek backward, 5 = seek forward. */
-static int process_button(int button, struct nx_pcm_output *output)
+static int process_button(int button, struct nx_pcm_output *output,
+                          uint64_t current_us, uint64_t duration_us,
+                          uint64_t *seek_target_us)
 {
     if (button == BUTTON_NONE)
         return 0;
@@ -395,23 +471,28 @@ static int process_button(int button, struct nx_pcm_output *output)
         return 3;
 #endif
 #ifdef BUTTON_PREV
-    /* A held button is reported again with BUTTON_REPEAT.  Treat only the
-     * initial press as a seek request; restarting both decoders for every
-     * repeat event corrupts the visible frame and makes seeking unusable. */
-    if ((button & (BUTTON_PREV | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PREV)
-        return 4;
+    if ((button & (BUTTON_PREV | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PREV &&
+            seek_target_us != NULL)
+        return collect_seek(BUTTON_PREV, 4, -1, output, current_us,
+                            duration_us, seek_target_us);
 #endif
 #ifdef BUTTON_NEXT
-    if ((button & (BUTTON_NEXT | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_NEXT)
-        return 5;
+    if ((button & (BUTTON_NEXT | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_NEXT &&
+            seek_target_us != NULL)
+        return collect_seek(BUTTON_NEXT, 5, 1, output, current_us,
+                            duration_us, seek_target_us);
 #endif
 
 #ifdef BUTTON_PLAY
     if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PLAY) {
         nx_pcm_output_pause(output, 0);
-        draw_pause_screen();
+        draw_playback_osd(current_us, duration_us, 1);
+        rb->lcd_update();
         while (1) {
-            button = rb->button_get(true);
+            button = rb->button_get_w_tmo(HZ / 2);
+            rb->reset_poweroff_timer();
+            if (button == BUTTON_NONE)
+                continue;
             if (rb->default_event_handler(button) == SYS_USB_CONNECTED)
                 return 2;
 #ifdef BUTTON_POWER
@@ -421,7 +502,9 @@ static int process_button(int button, struct nx_pcm_output *output)
             if ((button & (BUTTON_PLAY | BUTTON_REL | BUTTON_REPEAT)) ==
                     BUTTON_PLAY) {
                 nx_pcm_output_pause(output, 1);
-                return 0;
+                draw_playback_osd(current_us, duration_us, 0);
+                rb->lcd_update();
+                return 3;
             }
         }
     }
@@ -528,9 +611,10 @@ static int drain_audio(struct nx_aac_decoder *audio,
                                    audio_ended);
         if (*audio_status != NX_AAC_OK)
             return 0;
-        event = process_button(rb->button_get_w_tmo(1), output);
+        event = process_button(rb->button_get_w_tmo(1), output,
+                               duration_us, duration_us, NULL);
         if (event == 3) {
-            draw_playback_osd(duration_us, duration_us);
+            draw_playback_osd(duration_us, duration_us, 0);
             rb->lcd_update();
         } else if (event == 1 || event == 2) {
             return event;
@@ -612,6 +696,7 @@ static int play_av(struct nx_h264_decoder *video,
         uint32_t decode_us;
         uint64_t target_us;
         uint64_t audio_clock_us;
+        uint64_t seek_target_us = 0;
         int event;
         int seek_event = 0;
 
@@ -648,7 +733,9 @@ static int play_av(struct nx_h264_decoder *video,
                 *video_status = NX_H264_END_OF_STREAM;
                 return 0;
             }
-            event = process_button(rb->button_get_w_tmo(1), output);
+            event = process_button(rb->button_get_w_tmo(1), output,
+                                   audio_clock_us, duration_us,
+                                   &seek_target_us);
             if (event == 3) {
                 osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
                 event = 0;
@@ -678,7 +765,7 @@ static int play_av(struct nx_h264_decoder *video,
             uint32_t current_second = (uint32_t)(audio_clock_us / 1000000u);
             draw_picture(video, playback_osd_y());
             if (current_second != osd_second) {
-                draw_playback_osd(audio_clock_us, duration_us);
+                draw_playback_osd(audio_clock_us, duration_us, 0);
                 osd_second = current_second;
             }
         } else {
@@ -687,10 +774,12 @@ static int play_av(struct nx_h264_decoder *video,
         }
         rb->lcd_update();
         stats->displayed++;
-        event = process_button(rb->button_get(false), output);
+        event = process_button(rb->button_get(false), output,
+                               audio_clock_us, duration_us,
+                               &seek_target_us);
         if (event == 3) {
             osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
-            draw_playback_osd(audio_clock_us, duration_us);
+            draw_playback_osd(audio_clock_us, duration_us, 0);
             rb->lcd_update();
             osd_second = (uint32_t)(audio_clock_us / 1000000u);
             event = 0;
@@ -706,16 +795,8 @@ static int play_av(struct nx_h264_decoder *video,
 
 perform_seek:
         {
-            uint64_t current_us = nx_pcm_output_clock_us(output);
-            uint64_t requested_us;
-            if (seek_event == 4)
-                requested_us = current_us > 10000000u ?
-                               current_us - 10000000u : 0;
-            else
-                requested_us = current_us + 10000000u < duration_us ?
-                               current_us + 10000000u : duration_us - 1;
             if (restart_av_at(video, audio, output, reader, track,
-                              audio_track, requested_us, &audio_ended,
+                              audio_track, seek_target_us, &audio_ended,
                               video_status, audio_status) != 0)
                 return 0;
             tail_active = 0;
