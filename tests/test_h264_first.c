@@ -144,6 +144,7 @@ int main(void)
     test_stream("dist/erosqnative/nx240-test.nxv", 0x24cd5247u, 192);
     test_stream("dist/erosqnative/nx240-stress.nxv", 0x94ba8733u, 480);
     test_stream("dist/erosqnative/nx240-av-sync.nxv", 0xb9e247eeu, 1440);
+    test_stream("dist/erosqnative/nx240-endurance.nxv", 0xb9e247eeu, 7198);
     puts("H.264 stream tests passed");
     return 0;
 }

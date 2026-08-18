@@ -10,8 +10,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Rockbox target: `erosqnative` (target ID 116)
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
-- Plugin size: 326,360 bytes
-- SHA-256: `3824be660b78cd25a70e9de108fff2b0522911731c0c938e642d71eecf8a2125`
+- Plugin size: 326,776 bytes
+- SHA-256: `427561109d51737cf6ba8a781f7d027262b663be7584993aa1abe9670cd43d52`
 
 ## Device results
 
@@ -20,6 +20,7 @@ firmware reported Rockbox 4.0 and plugin API 273.
 | 20 s stress, early M3 | 480/480 | 0 | 11.4/20.1 ms | video-only | n/a | 320 KiB |
 | 20 s stress, M4 A/V | 480/480 | 0 | 13.8/22.8 ms | 1.0/1.7 ms | 0 | 408 KiB |
 | 60 s synchronization | 1440/1440 | 0 | 10.0/17.6 ms | 0.9/1.0 ms | 0 | 446 KiB |
+| 5 min endurance | 7196/7197 | 0 | 11.0/19.6 ms | 0.9/1.1 ms | 0 | 447 KiB |
 
 The M4 test produced clean stereo audio in both ears. On the one-minute sync
 test, each beep remained aligned with its corresponding visual flash.
@@ -47,6 +48,10 @@ panel was removed because it flashed between seek steps on the LCD.
 | `nx240-av-sync.nxv` | One-minute flash/beep sync | `1179098f349d0390d67ebb45a7eab0063efec821a916b974244cadd8b88003ef` |
 | `nx240-endurance.nxv` | Five-minute sustained playback | `1b775c941662e59f4cb5c99c93ff36b3772024fbcf3aaf54802819de89dbbe6d` |
 
-The five-minute endurance file is ready for the next device-validation pass.
-It contains H.264 Constrained Baseline video at 320x240 and 24 fps plus AAC-LC
-stereo at 44.1 kHz.
+The five-minute endurance run remained synchronized and stable, with no frame
+drops or PCM underruns. Host decoding confirms all 7,198 video samples are
+valid. The device stopped one decoded picture early when the PCM clock ended
+before the H.264 decoder flushed its final buffered pictures. The current build
+adds a bounded 250 ms silent-tail clock to finish those pictures without
+allowing badly truncated audio tracks to run on indefinitely; that final-frame
+behavior is awaiting a device retest.

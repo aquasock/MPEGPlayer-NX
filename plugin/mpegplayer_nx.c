@@ -154,6 +154,8 @@ struct playback_stats {
     uint32_t worst_decode_us;
 };
 
+#define NX_AUDIO_TAIL_GRACE_US 250000u
+
 static uint32_t precision_time(void)
 {
 #if CONFIG_CPU == X1000 && !defined(SIMULATOR)
@@ -276,7 +278,7 @@ static void draw_playback_stats(const struct playback_stats *stats,
     unsigned long audio_average_us = audio->decoded_frames == 0 ? 0 :
         (unsigned long)(audio->decode_us / audio->decoded_frames);
 
-    rb->snprintf(line1, sizeof(line1), "NX M4 A/V: %lu/%lu drop %lu",
+    rb->snprintf(line1, sizeof(line1), "NX M6 A/V: %lu/%lu drop %lu",
                  (unsigned long)stats->displayed,
                  (unsigned long)stats->decoded,
                  (unsigned long)stats->dropped);
@@ -471,6 +473,26 @@ static int drain_audio(struct nx_aac_decoder *audio,
     return 0;
 }
 
+static uint64_t playback_clock_us(const struct nx_pcm_output *output,
+                                  int audio_ended, int *tail_active,
+                                  uint64_t *tail_base_us, long *tail_tick)
+{
+    uint64_t clock_us = nx_pcm_output_clock_us(output);
+
+    if (audio_ended && nx_pcm_output_finished(output)) {
+        if (!*tail_active) {
+            *tail_active = 1;
+            *tail_base_us = clock_us;
+            *tail_tick = *rb->current_tick;
+        }
+        return *tail_base_us +
+            (uint64_t)(*rb->current_tick - *tail_tick) * 1000000u / HZ;
+    }
+
+    *tail_active = 0;
+    return clock_us;
+}
+
 static int play_av(struct nx_h264_decoder *video,
                    struct nx_aac_decoder *audio,
                    struct nx_pcm_output *output,
@@ -485,6 +507,9 @@ static int play_av(struct nx_h264_decoder *video,
     uint64_t frame_period_us;
     uint64_t duration_us;
     int audio_ended = 0;
+    int tail_active = 0;
+    uint64_t tail_base_us = 0;
+    long tail_tick = 0;
     long osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
     uint32_t osd_second = UINT32_MAX;
 
@@ -544,12 +569,15 @@ static int play_av(struct nx_h264_decoder *video,
             stats->checksum = nx_h264_picture_checksum(video);
 
         target_us = video->sample.dts * 1000000u / track->timescale;
-        audio_clock_us = nx_pcm_output_clock_us(output);
+        audio_clock_us = playback_clock_us(output, audio_ended,
+                                            &tail_active, &tail_base_us,
+                                            &tail_tick);
         while (audio_clock_us < target_us) {
             /* A malformed or badly trimmed file may end audio before video.
              * Stop cleanly at the last audible timestamp instead of waiting
              * forever on an audio clock which can no longer advance. */
-            if (audio_ended && nx_pcm_output_finished(output)) {
+            if (tail_active &&
+                target_us > tail_base_us + NX_AUDIO_TAIL_GRACE_US) {
                 *video_status = NX_H264_END_OF_STREAM;
                 return 0;
             }
@@ -568,7 +596,9 @@ static int play_av(struct nx_h264_decoder *video,
                                        &audio_ended);
             if (*audio_status != NX_AAC_OK)
                 return 0;
-            audio_clock_us = nx_pcm_output_clock_us(output);
+            audio_clock_us = playback_clock_us(output, audio_ended,
+                                                &tail_active, &tail_base_us,
+                                                &tail_tick);
         }
         if (seek_event != 0)
             goto perform_seek;
@@ -621,6 +651,7 @@ perform_seek:
                               audio_track, requested_us, &audio_ended,
                               video_status, audio_status) != 0)
                 return 0;
+            tail_active = 0;
             osd_until = *rb->current_tick + NX_OSD_SECONDS * HZ;
             osd_second = UINT32_MAX;
             rb->reset_poweroff_timer();

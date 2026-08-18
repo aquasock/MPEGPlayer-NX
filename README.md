@@ -39,6 +39,7 @@ container can store. Unsupported profiles should fail clearly.
 - Live volume control using the player's dedicated volume buttons
 - End-of-playback average/worst decode time, peak memory, and frame statistics
 - Clean PCM drain at end-of-file without truncating buffered AAC
+- Bounded silent-tail scheduling for final H.264 pictures after AAC padding
 - Early, specific NX240 profile errors for size, codec, frame rate, and audio
 - Sub-millisecond decoder timing on the X1000 hardware counter
 - Host-side parser and 192-frame H.264 stream tests; the reference frame
