@@ -11,7 +11,7 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
 - Plugin size: 326,808 bytes
-- SHA-256: `c0c8a2a9c494cf01a627e7e8678ec654b0ace2e8152d24dacf2c0ee0a3a8b58a`
+- SHA-256: `6a637c902696b5d58ad7120559a671f6541da1077d7c65da869ba35250e5c57d`
 
 ## Device results
 
@@ -39,6 +39,8 @@ The following controls and behaviors were also exercised on the unit:
 Progress-bar flicker was removed by reserving the overlay rows from video
 refreshes and updating the overlay once per second. The transient `Seeking...`
 panel was removed because it flashed between seek steps on the LCD.
+Held Previous/Next repeat events are ignored after the initial ten-second seek,
+preventing overlapping decoder restarts and corrupted frames.
 
 ## Test media checksums
 

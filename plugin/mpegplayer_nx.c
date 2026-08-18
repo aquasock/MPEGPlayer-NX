@@ -338,11 +338,14 @@ static int process_button(int button, struct nx_pcm_output *output)
         return 3;
 #endif
 #ifdef BUTTON_PREV
-    if ((button & (BUTTON_PREV | BUTTON_REL)) == BUTTON_PREV)
+    /* A held button is reported again with BUTTON_REPEAT.  Treat only the
+     * initial press as a seek request; restarting both decoders for every
+     * repeat event corrupts the visible frame and makes seeking unusable. */
+    if ((button & (BUTTON_PREV | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_PREV)
         return 4;
 #endif
 #ifdef BUTTON_NEXT
-    if ((button & (BUTTON_NEXT | BUTTON_REL)) == BUTTON_NEXT)
+    if ((button & (BUTTON_NEXT | BUTTON_REL | BUTTON_REPEAT)) == BUTTON_NEXT)
         return 5;
 #endif
 

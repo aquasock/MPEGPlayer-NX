@@ -123,8 +123,10 @@ standard MP4 containers; the dedicated extension avoids Rockbox's built-in
 
 During playback, Play pauses/resumes, Volume changes the Rockbox volume, Menu
 shows the two-second progress OSD, and Previous/Next seek backward/forward by
-ten seconds to the nearest usable keyframe. The backlight is forced on until
-playback exits, after which the user's normal backlight setting is restored.
+ten seconds to the nearest usable keyframe. Holding Previous/Next performs one
+seek per press; release and press again for another step. The backlight is
+forced on until playback exits, after which the user's normal backlight setting
+is restored.
 
 ### Install a native test build manually
 
