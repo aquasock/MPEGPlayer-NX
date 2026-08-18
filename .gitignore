@@ -1,0 +1,6 @@
+/build/
+*.o
+*.rock
+!dist/**/*.rock
+*.tmp
+compile_commands.json
