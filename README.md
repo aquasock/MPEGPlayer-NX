@@ -126,7 +126,8 @@ shows the two-second progress OSD, and Previous/Next seek backward/forward by
 ten seconds to the nearest usable keyframe. Holding Previous/Next performs one
 seek per press; release and press again for another step. The backlight is
 forced on until playback exits, after which the user's normal backlight setting
-is restored.
+is restored. The compact playback OSD uses the raised-lavender styling of
+Rockbox's original MPEGPlayer and is kept independent of oversized theme fonts.
 
 ### Install a native test build manually
 

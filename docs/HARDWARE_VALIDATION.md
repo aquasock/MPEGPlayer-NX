@@ -10,8 +10,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Rockbox target: `erosqnative` (target ID 116)
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
-- Plugin size: 326,808 bytes
-- SHA-256: `6a637c902696b5d58ad7120559a671f6541da1077d7c65da869ba35250e5c57d`
+- Plugin size: 327,352 bytes
+- SHA-256: `d3a472094bcd0f32f6bd8a90d0593b40e0005815f873fe7d2142790ca70a0548`
 
 ## Device results
 
@@ -41,6 +41,8 @@ refreshes and updating the overlay once per second. The transient `Seeking...`
 panel was removed because it flashed between seek steps on the LCD.
 Held Previous/Next repeat events are ignored after the initial ten-second seek,
 preventing overlapping decoder restarts and corrupted frames.
+The playback overlay follows MPEGPlayer's compact raised-lavender styling and
+uses the fixed system font so a large theme font cannot obscure the video.
 
 ## Test media checksums
 

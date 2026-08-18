@@ -177,13 +177,11 @@ static uint32_t precision_elapsed_us(uint32_t start)
 
 static int playback_osd_y(void)
 {
-    int line_height;
-    int panel_height;
+    int font_height;
 
-    rb->lcd_setfont(FONT_UI);
-    line_height = rb->font_get(FONT_UI)->height;
-    panel_height = line_height + 11;
-    return (LCD_HEIGHT - panel_height) & ~1;
+    rb->lcd_setfont(FONT_SYSFIXED);
+    font_height = rb->font_get(FONT_SYSFIXED)->height;
+    return (LCD_HEIGHT - font_height - 8) & ~1;
 }
 
 static void draw_picture(const struct nx_h264_decoder *decoder,
@@ -212,10 +210,33 @@ static void draw_picture(const struct nx_h264_decoder *decoder,
                      decoder->width, height);
 }
 
+static void format_playback_time(char *text, size_t size, uint64_t time_us)
+{
+    unsigned long seconds = (unsigned long)(time_us / 1000000u);
+    unsigned long minutes = seconds / 60;
+
+    if (minutes >= 60) {
+        rb->snprintf(text, size, "%lu:%02lu:%02lu", minutes / 60,
+                     minutes % 60, seconds % 60);
+    } else {
+        rb->snprintf(text, size, "%lu:%02lu", minutes, seconds % 60);
+    }
+}
+
 static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us)
 {
-    char text[64];
+    char elapsed_text[16];
+    char duration_text[16];
+    char volume_text[16];
     int panel_y;
+    int panel_height;
+    int font_height;
+    int elapsed_width;
+    int duration_width;
+    int volume_width;
+    int icon_x;
+    int icon_y;
+    int icon_height;
     int bar_width;
     int fill_width;
     int volume = rb->sound_val2phys(SOUND_VOLUME,
@@ -223,25 +244,61 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us)
 
     if (elapsed_us > duration_us)
         elapsed_us = duration_us;
-    rb->lcd_setfont(FONT_UI);
+    rb->lcd_setfont(FONT_SYSFIXED);
     panel_y = playback_osd_y();
-    bar_width = LCD_WIDTH - 8;
+    panel_height = LCD_HEIGHT - panel_y;
+    font_height = rb->font_get(FONT_SYSFIXED)->height;
+    format_playback_time(elapsed_text, sizeof(elapsed_text), elapsed_us);
+    format_playback_time(duration_text, sizeof(duration_text), duration_us);
+    rb->snprintf(volume_text, sizeof(volume_text), "%d%s", volume,
+                 rb->sound_unit(SOUND_VOLUME));
+    rb->lcd_getstringsize(elapsed_text, &elapsed_width, NULL);
+    rb->lcd_getstringsize(duration_text, &duration_width, NULL);
+    rb->lcd_getstringsize(volume_text, &volume_width, NULL);
+    bar_width = LCD_WIDTH - 4;
     fill_width = duration_us == 0 ? 0 :
         (int)(elapsed_us * bar_width / duration_us);
 
-    rb->lcd_set_foreground(LCD_BLACK);
-    rb->lcd_fillrect(0, panel_y, LCD_WIDTH, LCD_HEIGHT - panel_y);
+#ifdef HAVE_LCD_COLOR
+    /* Match MPEGPlayer's raised lavender OSD rather than covering the lower
+     * screen with an opaque black message panel. */
+    rb->lcd_set_foreground(LCD_RGBPACK(0x73, 0x75, 0xbd));
+    rb->lcd_fillrect(0, panel_y, LCD_WIDTH, panel_height);
+    rb->lcd_set_foreground(LCD_RGBPACK(0xd9, 0xda, 0xee));
+    rb->lcd_hline(0, LCD_WIDTH - 1, panel_y);
+    rb->lcd_set_foreground(LCD_RGBPACK(0xa8, 0xaa, 0xd6));
+    rb->lcd_hline(0, LCD_WIDTH - 1, panel_y + 1);
+    rb->lcd_set_foreground(LCD_RGBPACK(0x4e, 0x50, 0x82));
+    rb->lcd_hline(0, LCD_WIDTH - 1, LCD_HEIGHT - 2);
+    rb->lcd_set_foreground(LCD_RGBPACK(0x2e, 0x2f, 0x4f));
+    rb->lcd_hline(0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
+#else
+    rb->lcd_set_foreground(LCD_LIGHTGRAY);
+    rb->lcd_fillrect(0, panel_y, LCD_WIDTH, panel_height);
+#endif
+
     rb->lcd_set_foreground(LCD_WHITE);
-    rb->snprintf(text, sizeof(text), "%lu:%02lu / %lu:%02lu   Vol %d%s",
-                 (unsigned long)(elapsed_us / 60000000u),
-                 (unsigned long)(elapsed_us / 1000000u % 60),
-                 (unsigned long)(duration_us / 60000000u),
-                 (unsigned long)(duration_us / 1000000u % 60),
-                 volume, rb->sound_unit(SOUND_VOLUME));
-    rb->lcd_putsxy(4, panel_y + 1, text);
-    rb->lcd_drawrect(4, LCD_HEIGHT - 7, bar_width, 5);
+    rb->lcd_putsxy(2, panel_y + 2, elapsed_text);
+    rb->lcd_putsxy(LCD_WIDTH - volume_width - 2, panel_y + 2, volume_text);
+    rb->lcd_putsxy(LCD_WIDTH - volume_width - duration_width - 10,
+                   panel_y + 2, duration_text);
+
+    /* A small play glyph occupies the center position used by MPEGPlayer's
+     * bitmap status icon. */
+    icon_height = font_height < 9 ? font_height : 9;
+    icon_x = (LCD_WIDTH - icon_height) / 2;
+    icon_y = panel_y + 2 + (font_height - icon_height) / 2;
+    for (int i = 0; i < icon_height; ++i) {
+        int half = i <= icon_height / 2 ? i : icon_height - 1 - i;
+        rb->lcd_hline(icon_x, icon_x + half, icon_y + i);
+    }
+
+    rb->lcd_drawrect(2, LCD_HEIGHT - 6, bar_width, 4);
     if (fill_width > 2)
-        rb->lcd_fillrect(5, LCD_HEIGHT - 6, fill_width - 2, 3);
+        rb->lcd_fillrect(3, LCD_HEIGHT - 5, fill_width - 2, 2);
+
+    rb->lcd_set_background(LCD_BLACK);
+    rb->lcd_set_foreground(LCD_WHITE);
 }
 
 static void draw_message_panel(const char *line1, const char *line2,
