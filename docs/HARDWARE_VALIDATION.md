@@ -10,8 +10,8 @@ firmware reported Rockbox 4.0 and plugin API 273.
 - Rockbox target: `erosqnative` (target ID 116)
 - Toolchain: `mipsel-elf-gcc` 9.5.0
 - Plugin: `dist/erosqnative/rockbox-4.0/mpegplayer_nx.rock`
-- Plugin size: 328,408 bytes
-- SHA-256: `4781023281ad201912ba0e2a68d3cdd1928c09299a2e8d1732181d3af7a95409`
+- Plugin size: 328,440 bytes
+- SHA-256: `34f15445dde963712b4c1d2633895a89ba398df8c7fac18a4b2811ceece4e028`
 
 ## Device results
 

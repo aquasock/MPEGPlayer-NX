@@ -264,6 +264,7 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us,
 #ifdef HAVE_LCD_COLOR
     /* Match MPEGPlayer's raised lavender OSD rather than covering the lower
      * screen with an opaque black message panel. */
+    rb->lcd_set_background(LCD_RGBPACK(0x73, 0x75, 0xbd));
     rb->lcd_set_foreground(LCD_RGBPACK(0x73, 0x75, 0xbd));
     rb->lcd_fillrect(0, panel_y, LCD_WIDTH, panel_height);
     rb->lcd_set_foreground(LCD_RGBPACK(0xd9, 0xda, 0xee));
@@ -275,6 +276,7 @@ static void draw_playback_osd(uint64_t elapsed_us, uint64_t duration_us,
     rb->lcd_set_foreground(LCD_RGBPACK(0x2e, 0x2f, 0x4f));
     rb->lcd_hline(0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
 #else
+    rb->lcd_set_background(LCD_LIGHTGRAY);
     rb->lcd_set_foreground(LCD_LIGHTGRAY);
     rb->lcd_fillrect(0, panel_y, LCD_WIDTH, panel_height);
 #endif
